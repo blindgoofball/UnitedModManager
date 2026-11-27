@@ -220,11 +220,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "file"],
+          "required": ["type"],
+          "anyOf": [{ "required": ["file"] }, { "required": ["path"] }],
           "properties": {
             "type": { "const": "run" },
             "when": { "$ref": "#/definitions/when" },
-            "file": { "type": "string", "minLength": 1 },
+            "file": { "type": "string", "minLength": 1, "description": "A file downloaded by an earlier download step." },
+            "path": { "$ref": "#/definitions/path", "description": "A script or program inside a folder an earlier unpack step wrote to. .exe, .bat, .cmd or .ps1 only; no wildcards. The archive it came from must be verified by hash." },
             "interactive": { "type": "boolean" },
             "args": { "type": "array", "items": { "type": "string" } },
             "elevate": { "type": "boolean" }

@@ -9,7 +9,7 @@ import { getRelease, getReleaseWithAssets } from './github';
 import { applicableMethods, buildInstallPlan, buildRemovePlan, executeInstall, executeRemove, EngineDeps, InstallPlan, RemovePlan } from './install/engine';
 import { tokenRoots } from './install/paths';
 import { detectPresence } from './install/presence';
-import { isConsoleProgram, runInConsoleWindow } from './install/run-installer';
+import { needsConsoleWindow, runInConsoleWindow } from './install/run-installer';
 import { readInstalled, upsertRecords, writeInstalled } from './installed';
 import { getLibrary, resolveGames } from './library';
 import { readSettings, writeSettings } from './settings';
@@ -29,8 +29,8 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
  *  started directly; those are handed to the shell, which shows the Windows prompt, but then
  *  we cannot tell when they finish. */
 async function runInstaller(file: string, args: string[]): Promise<{ exitCode: number | null; launchedOnly: boolean }> {
-  // Text-mode installers need a console window of their own, or they quit immediately.
-  if (isConsoleProgram(file)) {
+  // Text-mode installers and scripts need a console window of their own, or they quit immediately.
+  if (needsConsoleWindow(file)) {
     const exitCode = await runInConsoleWindow(file, args, { title: 'Installer', workDir: path.join(path.dirname(file), '.run') });
     return { exitCode, launchedOnly: false };
   }
@@ -277,6 +277,7 @@ function toSubmitForm(raw: unknown): SubmitForm | null {
     workshopItemId: s('workshopItemId'), installerAsset: s('installerAsset'), hashSource: r.hashSource === 'file' ? 'file' : 'digest',
     hashFile: s('hashFile'), interactive: b('interactive'), selfUpdating: b('selfUpdating'), leftoverPath: s('leftoverPath'),
     zipAsset: s('zipAsset'), unpackInto: s('unpackInto'), createdFolder: s('createdFolder'),
+    scriptPath: s('scriptPath'), scriptInteractive: b('scriptInteractive'),
   };
 }
 

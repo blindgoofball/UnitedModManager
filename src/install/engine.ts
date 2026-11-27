@@ -201,6 +201,7 @@ export async function buildInstallPlan(input: PlanInput, deps: EngineDeps, recor
     if (steps.length === 0) throw new Error(`${manifest.name} has no steps for ${PLATFORM_NAMES[deps.platform]}${version ? ` with game version ${version}` : ''}.`);
 
     const downloaded = new Map<string, true>();
+    const unpackTargets: string[] = []; // folders this method unpacks into, so a script can be required to live in one
     let lastName: string | undefined;
     for (const step of steps) {
       const planned: PlannedStep = { modId: manifest.id, step, text: '' };
@@ -236,13 +237,31 @@ export async function buildInstallPlan(input: PlanInput, deps: EngineDeps, recor
           if (!file || !downloaded.has(file)) throw new Error(`${manifest.name}: an unpack step has nothing to unpack.`);
           if (!/\.zip$/i.test(file)) throw new Error(`${file} is not a .zip file, which is the only archive type supported so far.`);
           planned.target = expandInstallPath(step.to, roots);
+          unpackTargets.push(planned.target);
           planned.text = `Unpack ${file} into ${planned.target}. Any existing copy of the same folders is moved to a backup first`;
           break;
         }
         case 'run': {
           if (deps.platform !== 'windows') throw new Error('Running installers is only supported on Windows so far.');
           if (step.elevate) throw new Error('Installers that must run as administrator are not supported yet.');
-          if (!downloaded.has(step.file)) throw new Error(`${manifest.name}: run step "${step.file}" was not downloaded first.`);
+          if (step.path) {
+            // A script from an archive this method unpacks. Only .exe/.bat/.cmd/.ps1, never a wildcard,
+            // and only inside a folder an earlier step of this method unpacks into.
+            if (step.file) throw new Error(`${manifest.name}: a run step takes either "file" or "path", not both.`);
+            const script = expandInstallPath(step.path, roots);
+            if (!/\.(exe|bat|cmd|ps1)$/i.test(script) || /[*?]/.test(script)) {
+              throw new Error(`${manifest.name}: only .exe, .bat, .cmd and .ps1 files can be run, and not with wildcards.`);
+            }
+            if (!unpackTargets.some((t) => isInside(t, script))) {
+              throw new Error(`${manifest.name}: the script "${step.path}" is not inside a folder that is unpacked earlier.`);
+            }
+            planned.target = script;
+            planned.text = step.interactive
+              ? `Run the script ${path.basename(script)} from ${path.dirname(script)}. It opens its own window, and you answer its questions there`
+              : `Run the script ${path.basename(script)} from ${path.dirname(script)}`;
+            break;
+          }
+          if (!step.file || !downloaded.has(step.file)) throw new Error(`${manifest.name}: run step "${step.file ?? ''}" was not downloaded first.`);
           planned.text = step.interactive
             ? `Start ${step.file}. It opens its own window, and you finish the installation there`
             : `Run ${step.file}`;
@@ -456,14 +475,30 @@ export async function executeInstall(
           break;
         }
         case 'run': {
-          const d = downloads.get(`${ps.modId}:${step.file.toLowerCase()}`);
-          if (!d) throw new Error(`${step.file} was not downloaded.`);
-          const r = await deps.runInstaller(d.file, step.args ?? []);
+          let toRun: string;
+          const what = step.path ? 'script' : 'installer';
+          if (step.path) {
+            toRun = ps.target as string;
+            // Run only what this install has just unpacked, never a file that was already on the computer.
+            const justMade = state(ps.modId).extracted.some((g) =>
+              g.roots.some((root) => {
+                const made = path.join(g.baseDir, root);
+                return toRun === made || isInside(made, toRun);
+              }),
+            );
+            if (!justMade) throw new Error('The script is not one of the files that were just unpacked, so it was not run.');
+            if (!fs.existsSync(toRun)) throw new Error('The script was not found after unpacking.');
+          } else {
+            const d = downloads.get(`${ps.modId}:${(step.file ?? '').toLowerCase()}`);
+            if (!d) throw new Error(`${step.file} was not downloaded.`);
+            toRun = d.file;
+          }
+          const r = await deps.runInstaller(toRun, step.args ?? []);
           if (!r.launchedOnly && r.exitCode !== 0) {
             throw new Error(
               r.exitCode === null
-                ? 'The installer window was closed before it finished. Nothing was recorded as installed.'
-                : `The installer closed with code ${r.exitCode}, so it may not have finished. Nothing was recorded as installed.`,
+                ? `The ${what} window was closed before it finished. Nothing was recorded as installed.`
+                : `The ${what} closed with code ${r.exitCode}, so it may not have finished. Nothing was recorded as installed.`,
             );
           }
           state(ps.modId).ran = true;

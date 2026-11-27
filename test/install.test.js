@@ -241,6 +241,89 @@ test('a hash file that disagrees stops the installer from running', async () => 
   assert.equal(w.ran.length, 0, 'the installer must never run');
 });
 
+/** A mod whose zip contains an install script: unpack it, then run the script. */
+function scriptWorld(runResult, scriptPath = '{game}/Mods/Mod/install.bat', files) {
+  const w = world({ runResult });
+  const zip = zipOf(files ?? { 'Mod/install.bat': '@echo off\r\nexit /b 0\r\n', 'Mod/data.txt': 'payload' });
+  w.web.set('https://dl.test/Mod.zip', zip);
+  w.addRelease('mod-a', 'v1.0.0', [asset('Mod.zip', zip, { digest: `sha256:${sha(zip)}` })]);
+  w.manifests['mod-a'] = baseManifest({
+    methods: [{ id: 'm', label: 'M', steps: [
+      { type: 'download', asset: 'Mod.zip', githubDigest: true },
+      { type: 'extract', to: '{game}/Mods' },
+      { type: 'run', path: scriptPath, interactive: true },
+    ] }],
+  });
+  return w;
+}
+
+test('a script from an unpacked archive is run after unpacking, and what it unpacked is recorded', async () => {
+  const w = scriptWorld();
+  const plan = await buildInstallPlan(w.input('mod-a', 'm'), w.deps, []);
+  assert.match(plan.steps[2].text, /Run the script install\.bat from .*Mod\b/);
+  const res = await executeInstall(plan, new Set(), w.deps, () => {});
+  assert.equal(res.ok, true, res.message);
+  assert.equal(w.ran.length, 1);
+  assert.equal(w.ran[0].file, path.join(w.game, 'Mods', 'Mod', 'install.bat'));
+  assert.equal(w.ran[0].content.toString(), '@echo off\r\nexit /b 0\r\n', 'it ran the unpacked copy, which existed when it started');
+  assert.deepEqual(res.records[0].extracted, [{ baseDir: path.join(w.game, 'Mods'), roots: ['Mod'] }], 'so it can be removed later');
+});
+
+test('a script that fails is reported as a script, and nothing is recorded', async () => {
+  let w = scriptWorld({ exitCode: 5, launchedOnly: false });
+  let res = await executeInstall(await buildInstallPlan(w.input('mod-a', 'm'), w.deps, []), new Set(), w.deps, () => {});
+  assert.equal(res.ok, false);
+  assert.match(res.message, /The script closed with code 5/);
+  assert.equal(res.records, undefined);
+
+  w = scriptWorld({ exitCode: null, launchedOnly: false });
+  res = await executeInstall(await buildInstallPlan(w.input('mod-a', 'm'), w.deps, []), new Set(), w.deps, () => {});
+  assert.match(res.message, /script window was closed before it finished/);
+});
+
+test('a script path that is inside the unpack folder but NOT part of the archive is never run', async () => {
+  // Something already on the computer at a path the manifest names must not be run just because it is nearby.
+  const w = scriptWorld(undefined, '{game}/Mods/Other/old.bat');
+  fs.mkdirSync(path.join(w.game, 'Mods', 'Other'), { recursive: true });
+  fs.writeFileSync(path.join(w.game, 'Mods', 'Other', 'old.bat'), 'echo pre-existing');
+  const plan = await buildInstallPlan(w.input('mod-a', 'm'), w.deps, []);
+  const res = await executeInstall(plan, new Set(), w.deps, () => {});
+  assert.equal(res.ok, false);
+  assert.match(res.message, /not one of the files that were just unpacked/);
+  assert.equal(w.ran.length, 0, 'the pre-existing script must not run');
+});
+
+test('a script listed in the archive but missing from it fails safely instead of running something else', async () => {
+  const w = scriptWorld(undefined, '{game}/Mods/Mod/missing.bat');
+  const res = await executeInstall(await buildInstallPlan(w.input('mod-a', 'm'), w.deps, []), new Set(), w.deps, () => {});
+  assert.equal(res.ok, false);
+  assert.equal(w.ran.length, 0);
+});
+
+test('unsafe run paths are refused when the plan is made', async () => {
+  const cases = [
+    ['{game}/elsewhere/install.bat', /not inside a folder that is unpacked earlier/],
+    ['{game}/Mods/Mod/readme.txt', /only \.exe, \.bat, \.cmd and \.ps1/],
+    ['{game}/Mods/Mod/run.vbs', /only \.exe, \.bat, \.cmd and \.ps1/],
+    ['{game}/Mods/Mod/*.bat', /only \.exe, \.bat, \.cmd and \.ps1.*wildcards/],
+    ['{game}/Mods/../install.bat', /outside|not inside/],
+    ['{home}/install.bat', /not inside a folder that is unpacked earlier/],
+  ];
+  for (const [p, expected] of cases) {
+    const w = scriptWorld(undefined, p);
+    await assert.rejects(buildInstallPlan(w.input('mod-a', 'm'), w.deps, []), expected, p);
+  }
+  const both = scriptWorld();
+  both.manifests['mod-a'].methods[0].steps[2].file = 'Mod.zip';
+  await assert.rejects(buildInstallPlan(both.input('mod-a', 'm'), both.deps, []), /either "file" or "path"/);
+});
+
+test('a script cannot be run before anything is unpacked', async () => {
+  const w = scriptWorld();
+  w.manifests['mod-a'].methods[0].steps.splice(1, 1); // drop the unpack step
+  await assert.rejects(buildInstallPlan(w.input('mod-a', 'm'), w.deps, []), /not inside a folder that is unpacked earlier/);
+});
+
 test('a failing installer is reported and not recorded; a shell-launched one is recorded as launched only', async () => {
   const exe = Buffer.from('MZ');
   const setup = (runResult) => {

@@ -49,18 +49,37 @@ function checkMod(m, { byId }) {
     }
   }
 
-  // Anything downloaded and then run must be integrity-checked.
+  // Anything downloaded and then run must be integrity-checked: either a downloaded program, or a
+  // script inside an archive that was downloaded and unpacked.
+  const verified = (d) => !!(d && (d.sha256 || d.sha256Asset || d.githubDigest));
   for (const method of m.methods) {
     const downloads = new Map();
+    const unpacked = []; // { to, verified } for each unpack step so far
+    let lastDownload;
     for (const s of method.steps) {
       if (s.type === 'download') {
         if (s.asset && m.source.type !== 'github') fail(`method "${method.id}": "asset" downloads need a github source`);
         downloads.set(s.asset || s.url, s);
+        lastDownload = s;
       }
-      if (s.type === 'run') {
+      if (s.type === 'extract') {
+        const source = s.file ? downloads.get(s.file) : lastDownload;
+        unpacked.push({ to: s.to, verified: verified(source) });
+      }
+      if (s.type === 'run' && s.file && s.path) fail(`method "${method.id}": a run step takes either "file" or "path", not both`);
+      if (s.type === 'run' && s.path) {
+        if (!/\.(exe|bat|cmd|ps1)$/i.test(s.path)) fail(`method "${method.id}": "${s.path}" cannot be run; only .exe, .bat, .cmd and .ps1 files can`);
+        if (/[*?]/.test(s.path)) fail(`method "${method.id}": the run path "${s.path}" cannot use wildcards`);
+        if (/(^|\/)\.\.(\/|$)/.test(s.path)) fail(`method "${method.id}": the run path "${s.path}" contains ".."`);
+        const from = unpacked.find((u) => s.path.startsWith(u.to + '/'));
+        if (!from) fail(`method "${method.id}": the script "${s.path}" must be inside a folder that an earlier unpack step writes to`);
+        else if (!from.verified) {
+          fail(`method "${method.id}": "${s.path}" is run after unpacking, so the download it came from needs sha256, sha256Asset or githubDigest`);
+        }
+      } else if (s.type === 'run') {
         const d = [...downloads.entries()].find(([name]) => name === s.file || name.endsWith('/' + s.file));
         if (!d) fail(`method "${method.id}": run step "${s.file}" has no matching download step`);
-        else if (!d[1].sha256 && !d[1].sha256Asset && !d[1].githubDigest) {
+        else if (!verified(d[1])) {
           fail(`method "${method.id}": "${s.file}" is run after download, so the download needs sha256, sha256Asset or githubDigest`);
         }
       }

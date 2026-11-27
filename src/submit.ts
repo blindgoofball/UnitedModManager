@@ -52,8 +52,14 @@ export function formProblems(f: SubmitForm, games: GameDef[]): string[] {
     if (f.install === 'installer') {
       if (!f.installerAsset.trim()) p.push('Type the name of the installer file in the release.');
       if (f.hashSource === 'file' && !f.hashFile.trim()) p.push('Type the name of the hash file in the release, or choose to use the hash GitHub records.');
-    } else if (!f.zipAsset.trim()) {
-      p.push('Type the name of the zip file in the release.');
+    } else {
+      if (!f.zipAsset.trim()) p.push('Type the name of the zip file in the release.');
+      const script = f.scriptPath.trim();
+      if (script) {
+        if (!/\.(exe|bat|cmd|ps1)$/i.test(script)) p.push('The script to run must be a .exe, .bat, .cmd or .ps1 file.');
+        if (/[*?]/.test(script)) p.push('The script to run must be one exact file, with no * or ? in its name.');
+        if (/(^|[\\/])\.\.([\\/]|$)/.test(script)) p.push('The script to run cannot use ".." to leave the folder you unpack into.');
+      }
     }
   }
   return p;
@@ -136,14 +142,11 @@ export function buildManifest(f: SubmitForm, games: GameDef[]): Record<string, u
   // zip
   const into = relativeInGame(f.unpackInto);
   const target = into ? `{game}/${into}` : '{game}';
-  m.methods = [
-    {
-      id: 'manual',
-      label: 'Manual install',
-      recommended: true,
-      steps: [{ type: 'download', asset: f.zipAsset.trim(), githubDigest: true }, { type: 'extract', to: target }],
-    },
-  ];
+  const zipSteps: Record<string, unknown>[] = [{ type: 'download', asset: f.zipAsset.trim(), githubDigest: true }, { type: 'extract', to: target }];
+  const script = relativeInGame(f.scriptPath);
+  // A script that comes with the mod runs after unpacking, from inside the folder it was unpacked to.
+  if (script) zipSteps.push({ type: 'run', path: `${target}/${script}`, interactive: f.scriptInteractive });
+  m.methods = [{ id: 'manual', label: 'Manual install', recommended: true, steps: zipSteps }];
   m.updates = f.tag.trim() ? { strategy: 'asset-changed', asset: f.zipAsset.trim() } : { strategy: 'release-tag' };
   const folder = relativeInGame(f.createdFolder);
   if (folder) {

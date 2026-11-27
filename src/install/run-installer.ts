@@ -18,6 +18,11 @@ export function isConsoleProgram(file: string): boolean {
   }
 }
 
+/** Scripts are always text-mode, so they need a console window of their own; programs may or may not. */
+export function needsConsoleWindow(file: string): boolean {
+  return /\.(bat|cmd|ps1)$/i.test(file) || isConsoleProgram(file);
+}
+
 // Inside a batch file, % starts a variable. Everything else we use is safe inside double quotes.
 const batchQuote = (s: string): string => `"${s.replace(/%/g, '%%')}"`;
 
@@ -44,10 +49,21 @@ export async function runInConsoleWindow(
   const codeFile = path.join(opts.workDir, 'exit-code.txt');
   fs.rmSync(codeFile, { force: true });
 
+  // How to start it depends on what it is. A .bat/.cmd must be started with `call`, or this window's own
+  // script would end the moment the first one finishes. A .ps1 needs PowerShell, and its execution policy
+  // is bypassed for this one file, since the policy is aimed at scripts from unknown places, and this
+  // one came from an archive that was just verified.
+  const argText = args.map(batchArg).join(' ');
+  const invocation = /\.(bat|cmd)$/i.test(file)
+    ? `call ${batchQuote(file)} ${argText}`
+    : /\.ps1$/i.test(file)
+      ? `powershell -NoProfile -ExecutionPolicy Bypass -File ${batchQuote(file)} ${argText}`
+      : `${batchQuote(file)} ${argText}`;
   const lines = [
     '@echo off',
     'chcp 65001 >nul', // so a user name with accented letters in a path still works
-    `${batchQuote(file)} ${args.map(batchArg).join(' ')}`.trimEnd(),
+    `cd /d ${batchQuote(path.dirname(file))}`, // scripts often use relative paths, so start where they live
+    invocation.trimEnd(),
     'set UMM_CODE=%errorlevel%',
     // Redirect first: "echo 0> file" would be read as redirecting handle 0 instead of writing the digit.
     `>${batchQuote(codeFile)} echo %UMM_CODE%`,

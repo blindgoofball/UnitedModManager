@@ -18,7 +18,7 @@ const form = (over = {}) => ({
   gameChoice: 'rimworld', newGameName: '', platforms: ['windows'], install: 'zip',
   repo: 'someone/test-mod', tag: '', workshopItemId: '',
   installerAsset: '', hashSource: 'digest', hashFile: '', interactive: true, selfUpdating: false, leftoverPath: '',
-  zipAsset: 'TestMod.zip', unpackInto: 'Mods', createdFolder: 'TestMod',
+  zipAsset: 'TestMod.zip', unpackInto: 'Mods', createdFolder: 'TestMod', scriptPath: '', scriptInteractive: true,
   ...over,
 });
 const asset = (name, extra = {}) => ({ name, size: 1024, url: `https://x/${name}`, ...extra });
@@ -72,6 +72,27 @@ test('a zip entry with no pinned tag follows release tags, and unpacking into th
   assert.deepEqual(m.updates, { strategy: 'release-tag' });
   assert.equal(m.methods[0].steps[1].to, '{game}');
   assert.equal(m.detect, undefined, 'nothing to detect without a folder name');
+});
+
+test('a zip with an install script: the script runs after unpacking, and the entry passes the same rules as CI', async () => {
+  const r = await sub.buildSubmission(form({ scriptPath: 'TestMod/install.bat', scriptInteractive: true }), deps());
+  assert.deepEqual(r.problems, []);
+  const steps = JSON.parse(r.json).methods[0].steps;
+  assert.deepEqual(steps.map((s) => s.type), ['download', 'extract', 'run']);
+  assert.deepEqual(steps[2], { type: 'run', path: '{game}/Mods/TestMod/install.bat', interactive: true });
+  assert.equal(steps[0].githubDigest, true, 'the archive is verified before anything in it runs');
+
+  // Backslashes, a leading slash and a script at the top of the unpack folder all come out right.
+  const odd = JSON.parse((await sub.buildSubmission(form({ unpackInto: '', scriptPath: '\\setup.cmd', scriptInteractive: false }), deps())).json);
+  assert.deepEqual(odd.methods[0].steps[2], { type: 'run', path: '{game}/setup.cmd', interactive: false });
+});
+
+test('a script in the form must be one exact script file that stays inside the unpack folder', async () => {
+  for (const [bad, expected] of [['TestMod/payload.dll', /\.exe, \.bat, \.cmd or \.ps1/], ['TestMod/*.bat', /one exact file/], ['../install.bat', /cannot use "\.\."/]]) {
+    const r = await sub.buildSubmission(form({ scriptPath: bad }), deps());
+    assert.equal(r.json, '', `${bad} is stopped before a file is made`);
+    assert.ok(r.problems.some((p) => expected.test(p)), `${bad}: ${r.problems.join(' | ')}`);
+  }
 });
 
 test('a Steam Workshop entry gets detection and a way to remove it', async () => {
@@ -141,6 +162,29 @@ test('an unpack or copy destination that climbs out of its folder is refused', a
   copy.methods[0].steps.push({ type: 'copy', from: { url: 'https://x.test/a.xml' }, to: '{home}/../other/a.xml', backup: true });
   const c = await sub.checkSubmission(JSON.stringify(copy), deps());
   assert.ok(c.problems.some((p) => /leave its folder/.test(p)));
+});
+
+test('the shared rules for scripts inside archives: must follow a verified unpack, be a script type, and stay put', async () => {
+  const withRun = async (mutate) => {
+    const m = JSON.parse((await sub.buildSubmission(form(), deps())).json);
+    m.methods[0].steps.push({ type: 'run', path: '{game}/Mods/TestMod/install.bat', interactive: true });
+    mutate(m);
+    return (await sub.checkSubmission(JSON.stringify(m), deps())).problems;
+  };
+  assert.deepEqual(await withRun(() => {}), [], 'the normal case is accepted');
+  const run = (m) => m.methods[0].steps[2];
+
+  assert.ok((await withRun((m) => delete m.methods[0].steps[0].githubDigest)).some((p) => /is run after unpacking, so the download it came from needs sha256/.test(p)));
+  assert.ok((await withRun((m) => (run(m).path = '{game}/Elsewhere/install.bat'))).some((p) => /must be inside a folder that an earlier unpack step writes to/.test(p)));
+  assert.ok((await withRun((m) => (run(m).path = '{game}/Mods/TestMod/payload.dll'))).some((p) => /only \.exe, \.bat, \.cmd and \.ps1/.test(p)));
+  assert.ok((await withRun((m) => (run(m).path = '{game}/Mods/TestMod/*.bat'))).some((p) => /cannot use wildcards/.test(p)));
+  assert.ok((await withRun((m) => (run(m).path = '{game}/Mods/TestMod/../../x.bat'))).some((p) => /contains "\.\."/.test(p)));
+  assert.ok((await withRun((m) => (run(m).file = 'TestMod.zip'))).some((p) => /either "file" or "path", not both/.test(p)));
+  // Running before unpacking is the same mistake as naming a folder nothing writes to.
+  assert.ok((await withRun((m) => m.methods[0].steps.splice(1, 1))).some((p) => /must be inside a folder that an earlier unpack step writes to/.test(p)));
+  // A step with neither file nor path is not valid at all.
+  const neither = await withRun((m) => delete run(m).path);
+  assert.ok(neither.length > 0);
 });
 
 test('broken JSON and schema errors are reported clearly', async () => {

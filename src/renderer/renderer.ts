@@ -649,7 +649,11 @@ async function showSubmit(token: number, opts: ShowOptions): Promise<void> {
   const zipAsset = field('s-zasset', 'Zip file name in the release', { required: true, hint: 'For example MyMod.zip.' });
   const unpackInto = field('s-unpack', 'Unpack into this folder inside the game folder', { hint: 'For example Mods. Leave empty to unpack into the game folder itself.' });
   const createdFolder = field('s-created', 'Name of the folder the zip creates', { hint: 'Optional, but it lets the app recognise and remove the mod. For example MyMod.' });
-  const zipGroup = el('div', { class: 'group' }, zipAsset.wrap, unpackInto.wrap, createdFolder.wrap);
+  const script = field('s-script', 'Script to run after unpacking', {
+    hint: 'Optional. For mods that come with their own install script. Its path inside the folder you unpack into, for example MyMod/install.bat. Only .exe, .bat, .cmd and .ps1 files can be run.',
+  });
+  const scriptInteractive = choice('checkbox', 'scriptinteractive', 's-script-interactive', 'yes', 'The script opens a window and asks the person questions', true);
+  const zipGroup = el('div', { class: 'group' }, zipAsset.wrap, unpackInto.wrap, createdFolder.wrap, script.wrap, scriptInteractive.wrap);
 
   const workshopId = field('s-workshop', 'Steam Workshop item number', { required: true, hint: 'The number at the end of the item\'s Steam address, after id=.' });
   const workshopGroup = el('div', { class: 'group' }, workshopId.wrap);
@@ -665,6 +669,7 @@ async function showSubmit(token: number, opts: ShowOptions): Promise<void> {
     hashSource: hashFile.input.checked ? 'file' : 'digest', hashFile: hashFileName.control.value, interactive: interactive.input.checked,
     selfUpdating: selfUpdating.input.checked, leftoverPath: leftover.control.value, zipAsset: zipAsset.control.value,
     unpackInto: unpackInto.control.value, createdFolder: createdFolder.control.value,
+    scriptPath: script.control.value, scriptInteractive: scriptInteractive.input.checked,
   });
 
   const updateVisibility = (): void => {

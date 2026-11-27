@@ -83,6 +83,9 @@ behind them is in [docs/schema-design.md](docs/schema-design.md).
 Some things the checker insists on, to keep users safe:
 
 - Anything that is downloaded and then run must be verified with a hash.
+- A script from inside a zip may be run only if the zip is verified by hash, the script is a
+  `.exe`, `.bat`, `.cmd` or `.ps1` inside the folder the zip unpacks into, and it is one of the files
+  that were just unpacked.
 - Anything that could overwrite a user's file must make a backup first.
 - Removal steps may only touch folders the manifest names, and a wildcard like `*.jar` is
   refused because it could match far more than the mod's own files.

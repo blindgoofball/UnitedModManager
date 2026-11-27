@@ -203,6 +203,23 @@ and United Minecraft's installer put a jar in `.minecraft/mods`.
   fixed characters before it (so `*.jar` is refused). Removing warns when another installed mod
   needs the one being removed.
 
+## Running a script from an unpacked archive
+
+Many mods ship a zip with an install script inside. A `run` step can name either a downloaded file
+(`file`) or a script inside a folder an earlier step unpacked (`path`), never both. Because that runs
+code from an archive, it is held to the same standard as running a downloaded installer:
+
+- The archive's download must be verified (`sha256`, `sha256Asset` or `githubDigest`).
+- The path must sit inside a folder that an earlier `extract` step of the same method writes to.
+- Only `.exe`, `.bat`, `.cmd` and `.ps1` files can run, with no wildcards and no `..`.
+- When it runs, the script must be one of the files that were just unpacked from that archive, so a
+  file that was already on the computer at that path is never run.
+- Scripts start in their own folder and get a console window of their own. A `.bat`/`.cmd` is started
+  with `call`, and a `.ps1` through PowerShell with its execution policy bypassed for that one file.
+
+Known limit: if the script fails, the files it came with stay where they were unpacked (nothing is
+recorded as installed). There is no automatic rollback yet, and no way yet to run a script when removing.
+
 ## Still open
 
 1. **ModsConfig.xml merging.** For now it is replace-with-backup-and-confirm.

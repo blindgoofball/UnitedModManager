@@ -54,7 +54,7 @@ interface StepWhen {
 type ModStep = { when?: StepWhen } & (
   | { type: 'download'; asset?: string; url?: string; sha256?: string; sha256Asset?: string; githubDigest?: boolean }
   | { type: 'extract'; file?: string; to: string; stripTopLevel?: boolean }
-  | { type: 'run'; file: string; interactive?: boolean; args?: string[]; elevate?: boolean }
+  | { type: 'run'; file?: string; path?: string; interactive?: boolean; args?: string[]; elevate?: boolean }
   | { type: 'copy'; from: { url: string }; to: string; backup?: boolean; ifExists?: 'overwrite' | 'skip' | 'ask' }
   | { type: 'open'; url: string }
   | { type: 'note'; text: string }
@@ -266,6 +266,9 @@ interface SubmitForm {
   unpackInto: string;
   /** Name of the folder the zip creates. */
   createdFolder: string;
+  /** A script to run after unpacking, as a path inside the unpack folder, such as MyMod/install.bat. */
+  scriptPath: string;
+  scriptInteractive: boolean;
 }
 
 interface SubmitCheckResult {
