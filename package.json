@@ -4,6 +4,7 @@
   "description": "Search, browse and install accessibility mods for mainstream games.",
   "main": "dist/main.js",
   "private": true,
+  "license": "GPL-3.0-only",
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js && node scripts/build-catalog.js",
     "catalog": "node scripts/build-catalog.js",
