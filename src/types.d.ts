@@ -153,7 +153,18 @@ interface FeedItem extends ReleaseInfo {
   game: string;
 }
 
+interface CatalogInfo {
+  /** Where the mod list in use came from. */
+  source: 'built-in' | 'cache' | 'github';
+  revision: string;
+  /** When GitHub was last asked successfully. */
+  checkedAt?: string;
+  /** Why the last attempt to get a newer list failed, if it did. */
+  error?: string;
+}
+
 interface HomeFeed {
+  catalog: CatalogInfo;
   items: FeedItem[];
   /** How many mods we tried to check, and how many of those failed. */
   total: number;
@@ -238,6 +249,8 @@ interface UmmApi {
   runPlan(planId: string, confirmedIds: string[]): Promise<InstallResult>;
   /** Returns a function that stops listening. */
   onInstallProgress(listener: (p: InstallProgress) => void): () => void;
+  /** Called when a newer mod list has been downloaded and is now in use. */
+  onCatalogChanged(listener: () => void): () => void;
   openExternal(url: string): Promise<boolean>;
 }
 

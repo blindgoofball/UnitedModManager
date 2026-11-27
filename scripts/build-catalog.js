@@ -6,6 +6,7 @@
 //   node scripts/build-catalog.js [catalogDir] [--check]
 //
 // --check validates only and writes nothing.
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const Ajv = require('ajv');
@@ -211,17 +212,38 @@ const index = browsable.map(({ m }) => ({
 
 // Every game that has at least one listed mod, with detection data when a games file exists.
 const games = [...new Map(browsable.map(({ m }) => [m.game.id, m.game.name]))].map(([id, name]) => ({
+  schemaVersion: 1,
   id,
   name,
   detect: gameFiles.get(id)?.data.detect ?? {},
 }));
 
+/** When the catalog last changed. Lets the app tell which of two copies is newer. */
+function revision() {
+  try {
+    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', 'catalog'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (out) return new Date(out).toISOString();
+  } catch {
+    // Not a git checkout (or no git installed): fall back to the build time.
+  }
+  return new Date().toISOString();
+}
+
 if (!checkOnly) {
+  // One self-contained file: the app downloads exactly this, and ships a copy of it as its fallback.
+  const bundle = {
+    formatVersion: 1,
+    revision: revision(),
+    generatedAt: new Date().toISOString(),
+    index,
+    games,
+    mods: mods.map(({ m }) => m).sort((a, b) => a.id.localeCompare(b.id)),
+  };
   fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(path.join(outDir, 'mods'), { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'index.json'), JSON.stringify(index, null, 2));
-  fs.writeFileSync(path.join(outDir, 'games.json'), JSON.stringify(games, null, 2));
-  for (const { file } of mods) fs.copyFileSync(path.join(modsDir, file), path.join(outDir, 'mods', file));
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, 'catalog.json'), JSON.stringify(bundle));
+  // The app re-checks what it downloads against the same schemas.
+  for (const f of ['mod.schema.json', 'game.schema.json']) fs.copyFileSync(path.join(root, 'catalog', 'schema', f), path.join(outDir, f));
 }
 console.log(
   `Catalog OK: ${browsable.length} mod(s) listed, ${mods.length - browsable.length} dependency, ${gameNames.size} game(s)` +

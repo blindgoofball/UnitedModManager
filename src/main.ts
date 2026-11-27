@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadAllManifests, loadGames, loadIndex, loadManifest } from './catalog';
+import { catalogInfo, initCatalog, loadAllManifests, loadGames, loadIndex, loadManifest, refreshCatalog } from './catalog';
 import { currentEnv } from './detect';
 import { getRelease, getReleaseWithAssets } from './github';
 import { applicableMethods, buildInstallPlan, buildRemovePlan, executeInstall, executeRemove, EngineDeps, InstallPlan, RemovePlan } from './install/engine';
@@ -180,7 +180,14 @@ async function runPlan(sender: Electron.WebContents, planId: unknown, confirmed:
 
 // ---------- catalog views ----------
 
+/** Checks GitHub for a newer mod list and tells every window if one was found. Never throws. */
+async function refreshCatalogAndNotify(): Promise<void> {
+  const { changed } = await refreshCatalog(fetch);
+  if (changed) for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('catalog:changed');
+}
+
 async function buildFeed(force: boolean): Promise<HomeFeed> {
+  if (force) await refreshCatalogAndNotify();
   const targets = loadAllManifests().filter((m) => m.kind !== 'dependency' && m.source.type === 'github');
   const results = await Promise.allSettled(targets.map((m) => getRelease(m, force)));
   const items: FeedItem[] = [];
@@ -190,7 +197,7 @@ async function buildFeed(force: boolean): Promise<HomeFeed> {
     else failed++;
   });
   items.sort((a, b) => b.date.localeCompare(a.date));
-  return { items, total: targets.length, failed };
+  return { catalog: catalogInfo(), items, total: targets.length, failed };
 }
 
 async function buildDetail(id: string): Promise<ModDetail | null> {
@@ -265,6 +272,8 @@ function createWindow(): void {
   // The window only ever shows our own page; links go to the user's browser instead.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  // Look for a newer mod list once the page is listening, so it does not miss the "changed" message.
+  win.webContents.once('did-finish-load', () => void refreshCatalogAndNotify());
   void win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -314,6 +323,7 @@ ipcMain.handle('app:open-external', async (_e, url: unknown) => {
 });
 
 app.whenReady().then(() => {
+  initCatalog(app.getPath('userData'));
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

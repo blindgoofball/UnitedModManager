@@ -15,6 +15,11 @@ const api: UmmApi = {
     ipcRenderer.on('install:progress', handler);
     return () => void ipcRenderer.removeListener('install:progress', handler);
   },
+  onCatalogChanged: (listener) => {
+    const handler = (): void => listener();
+    ipcRenderer.on('catalog:changed', handler);
+    return () => void ipcRenderer.removeListener('catalog:changed', handler);
+  },
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
 };
 

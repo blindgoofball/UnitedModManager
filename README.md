@@ -10,7 +10,9 @@ edges, and please report them.
 
 ## What it does
 
-- **Home**: the newest mod releases, with dates taken from GitHub.
+- **Home**: the newest mod releases, with dates taken from GitHub. The mod list itself is also
+  downloaded from this repository, so new mods appear without updating the app. It works offline
+  too, using the last list it downloaded.
 - **Browse**: search the catalog, filter by game, and read about each mod.
 - **Library**: the games found on your computer and the mods for them. Games are found through
   Steam or their usual folders. For anything else, you choose the folder yourself.
@@ -60,7 +62,10 @@ The list of mods is a folder of small JSON files, one per mod, so adding one mea
 2. Add `catalog/mods/<your-mod-id>.json`. The file name must match the `id` inside it. Copy an
    existing file from [catalog/mods](catalog/mods) as a starting point.
 3. Run `npm run catalog`. It checks your file and tells you in plain words what is wrong.
-4. Open a pull request.
+4. Open a pull request. Automatic checks run on it, and any problem shows up on your file.
+
+Once your change is merged, a new mod list is published automatically, and the app picks it up
+the next time it starts. Nobody has to release a new version of the app to add a mod.
 
 A mod file describes where its releases come from, how to install it (a list of steps such as
 download, unpack, run an installer), how to recognise it on a computer, and how to remove it.
@@ -93,7 +98,7 @@ Steam id.
 - Windows only for now. Some Mac and Linux paths are in the catalog but untested.
 - Games are found through Steam or fixed folders. GOG and Epic copies need their folder chosen by hand.
 - Installers that must run as administrator are not supported yet.
-- The catalog ships inside the app, so it does not update on its own yet.
+- The app only checks for a new mod list when it starts and when you press Refresh on Home.
 
 ## License
 

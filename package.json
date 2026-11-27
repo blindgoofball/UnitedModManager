@@ -15,12 +15,12 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^26.6.11",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
     "electron": "^45.5.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "adm-zip": "^0.6.1"
+    "adm-zip": "^0.6.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   }
 }

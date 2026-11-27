@@ -133,8 +133,29 @@ async function showHome(token: number, opts: ShowOptions): Promise<void> {
     }
     v.body.append(list);
   }
-  v.body.append(actionButton('Refresh releases', 'refresh', () => void show('home', { force: true, focusKey: 'refresh' })));
+  if (feed) v.body.append(el('p', { class: 'muted' }, catalogLine(feed.catalog)));
+  v.body.append(actionButton('Refresh releases and mod list', 'refresh', () => void show('home', { force: true, focusKey: 'refresh' })));
   focusKey(opts.focusKey);
+}
+
+/** One plain sentence about which mod list is in use and whether GitHub could be reached. */
+function catalogLine(c: CatalogInfo): string {
+  const changed = dateFormat.format(new Date(c.revision));
+  const base =
+    c.source === 'github'
+      ? `The mod list is up to date with GitHub (last changed ${changed}).`
+      : c.source === 'cache'
+        ? `The mod list was last downloaded from GitHub (last changed ${changed}).`
+        : `The mod list is the copy that came with the app (last changed ${changed}).`;
+  return c.error ? `${base} Could not check GitHub for a newer list: ${c.error}` : base;
+}
+
+/** Says something without changing the page, for results that belong to the whole app. */
+function announce(text: string): void {
+  const el = document.getElementById('announcer');
+  if (!el) return;
+  el.textContent = '';
+  window.setTimeout(() => (el.textContent = text), 50); // a change is what gets read out
 }
 
 // ---------- Library ----------
@@ -564,6 +585,13 @@ async function refreshUpdateCount(): Promise<void> {
 }
 
 async function init(): Promise<void> {
+  // Listen before anything else loads, so a newer mod list that arrives early is not missed.
+  window.umm.onCatalogChanged(() => {
+    void window.umm.listMods().then((mods) => {
+      catalog = mods;
+      announce('The mod list was updated. Open Browse to see it.');
+    });
+  });
   for (const b of navButtons) b.addEventListener('click', () => void show(b.dataset.view as ViewName));
   catalog = await window.umm.listMods();
   // Load the library once up front so the update count shows in the navigation.
