@@ -2,7 +2,7 @@
 // renderer has no CommonJS `exports`, so a compiled module would fail to load.
 // Shared types live in ../types.d.ts as globals.
 
-type ViewName = 'home' | 'library' | 'browse' | 'detail' | 'install';
+type ViewName = 'home' | 'library' | 'browse' | 'detail' | 'install' | 'submit';
 type Child = Node | string | null | undefined | false;
 
 interface ShowOptions {
@@ -563,6 +563,208 @@ async function showInstall(token: number, opts: ShowOptions): Promise<void> {
   v.body.append(actionButton(opts.remove ? 'Remove' : 'Install', 'go', () => void run()), actionButton('Cancel', 'cancel', backToDetail));
 }
 
+// ---------- Submit a mod ----------
+
+const GUIDE_URL = 'https://github.com/blindgoofball/UnitedModManager#adding-a-mod';
+
+function field(id: string, label: string, opts: { hint?: string; required?: boolean; rows?: number; type?: string } = {}) {
+  const hintId = opts.hint ? `${id}-hint` : undefined;
+  const control: HTMLInputElement | HTMLTextAreaElement = opts.rows
+    ? el('textarea', { id, rows: String(opts.rows), 'aria-describedby': hintId })
+    : el('input', { id, type: opts.type ?? 'text', autocomplete: 'off', 'aria-describedby': hintId });
+  const wrap = el(
+    'div',
+    { class: 'field' },
+    el('label', { for: id }, label + (opts.required ? ' (required)' : '')),
+    opts.hint ? el('p', { id: hintId, class: 'hint' }, opts.hint) : null,
+    control,
+  );
+  return { wrap, control };
+}
+
+function choice(type: 'radio' | 'checkbox', name: string, id: string, value: string, label: string, checked = false) {
+  const input = el('input', { type, name, id, value, checked: checked ? 'checked' : undefined });
+  return { wrap: el('div', { class: 'option' }, input, el('label', { for: id }, label)), input };
+}
+
+async function showSubmit(token: number, opts: ShowOptions): Promise<void> {
+  const v = skeleton('Submit a mod');
+  v.body.append(
+    el('p', {}, 'Know an accessibility mod that is not in the list, or made one? Describe it here. The app writes the catalog entry for you, checks it with the same rules the repository uses, and helps you send it.'),
+    el('p', {}, 'Nothing is sent anywhere until you choose to. You will need a free GitHub account to finish.'),
+  );
+
+  // --- About the mod
+  const name = field('s-name', 'Name of the mod', { required: true });
+  const summary = field('s-summary', 'Short description', { required: true, hint: 'One or two sentences, up to 300 characters.' });
+  const description = field('s-description', 'Longer description', { rows: 4, hint: 'Optional.' });
+  const authors = field('s-authors', 'Who made it', { required: true, hint: 'Separate several names with commas.' });
+  const homepage = field('s-homepage', 'Homepage', { type: 'url', hint: 'Optional. A web address starting with https://.' });
+  const license = field('s-license', 'License', { hint: 'Optional, for example GPL-3.0 or MIT.' });
+  v.body.append(el('h2', {}, 'About the mod'), name.wrap, summary.wrap, description.wrap, authors.wrap, homepage.wrap, license.wrap);
+
+  // --- The game
+  const games = new Map(catalog.map((m) => [m.gameId, m.game]));
+  const gameSelect = el('select', { id: 's-game' });
+  for (const [id, label] of [...games].sort((a, b) => a[1].localeCompare(b[1]))) gameSelect.append(el('option', { value: id }, label));
+  gameSelect.append(el('option', { value: '' }, 'A game that is not listed yet'));
+  const newGame = field('s-newgame', 'Name of the game', { required: true, hint: 'Its full, official name. The mod will still work; people just choose the game folder themselves until someone adds detection for it.' });
+  const newGameGroup = el('div', { class: 'group' }, newGame.wrap);
+  const platformSet = el('fieldset', {}, el('legend', {}, 'Works on'));
+  const platformBoxes = [
+    choice('checkbox', 'platform', 's-p-windows', 'windows', 'Windows', true),
+    choice('checkbox', 'platform', 's-p-macos', 'macos', 'macOS'),
+    choice('checkbox', 'platform', 's-p-linux', 'linux', 'Linux'),
+  ];
+  for (const p of platformBoxes) platformSet.append(p.wrap);
+  v.body.append(el('h2', {}, 'The game'), el('div', { class: 'field' }, el('label', { for: 's-game' }, 'Game'), gameSelect), newGameGroup, platformSet);
+
+  // --- How it is installed
+  const kinds = [
+    choice('radio', 'install', 's-i-installer', 'installer', 'An installer program that people run', false),
+    choice('radio', 'install', 's-i-zip', 'zip', 'A zip file that is unpacked into the game folder', true),
+    choice('radio', 'install', 's-i-workshop', 'workshop', 'Steam Workshop only', false),
+  ];
+  const kindSet = el('fieldset', {}, el('legend', {}, 'How do people install it?'));
+  for (const k of kinds) kindSet.append(k.wrap);
+  v.body.append(el('h2', {}, 'How people install it'), kindSet);
+
+  const repo = field('s-repo', 'GitHub repository', { required: true, hint: 'As owner/name, for example Blindgoofball/United-Minecraft. The mod is downloaded from the latest release there.' });
+  const tag = field('s-tag', 'Release tag to always use', { hint: 'Leave empty unless every update replaces one fixed release, such as a release called dev.' });
+  const githubGroup = el('div', { class: 'group' }, repo.wrap, tag.wrap);
+
+  const installerAsset = field('s-iasset', 'Installer file name in the release', { required: true, hint: 'You can use * for a changing part, such as my-installer-*.exe.' });
+  const hashDigest = choice('radio', 'hash', 's-h-digest', 'digest', 'The hash GitHub records for the file (nothing to publish)', true);
+  const hashFile = choice('radio', 'hash', 's-h-file', 'file', 'A hash file published in the same release', false);
+  const hashFileName = field('s-hashfile', 'Hash file name', { required: true, hint: 'For example my-installer.exe.sha256.' });
+  const hashFileGroup = el('div', { class: 'group' }, hashFileName.wrap);
+  const hashSet = el('fieldset', {}, el('legend', {}, 'How can people check the download is genuine?'), hashDigest.wrap, hashFile.wrap, hashFileGroup);
+  const interactive = choice('checkbox', 'interactive', 's-interactive', 'yes', 'The installer opens its own window, and the person finishes it there', true);
+  const selfUpdating = choice('checkbox', 'selfupdating', 's-selfupdating', 'yes', 'Running the installer again also updates the mod');
+  const leftover = field('s-leftover', 'A file the installer leaves in the game folder', {
+    hint: 'Optional, but it lets the app recognise and remove the mod. A path inside the game folder, such as mods/my-mod-*.jar. A * needs at least four fixed characters before it.',
+  });
+  const installerGroup = el('div', { class: 'group' }, installerAsset.wrap, hashSet, interactive.wrap, selfUpdating.wrap, leftover.wrap);
+
+  const zipAsset = field('s-zasset', 'Zip file name in the release', { required: true, hint: 'For example MyMod.zip.' });
+  const unpackInto = field('s-unpack', 'Unpack into this folder inside the game folder', { hint: 'For example Mods. Leave empty to unpack into the game folder itself.' });
+  const createdFolder = field('s-created', 'Name of the folder the zip creates', { hint: 'Optional, but it lets the app recognise and remove the mod. For example MyMod.' });
+  const zipGroup = el('div', { class: 'group' }, zipAsset.wrap, unpackInto.wrap, createdFolder.wrap);
+
+  const workshopId = field('s-workshop', 'Steam Workshop item number', { required: true, hint: 'The number at the end of the item\'s Steam address, after id=.' });
+  const workshopGroup = el('div', { class: 'group' }, workshopId.wrap);
+  v.body.append(githubGroup, installerGroup, zipGroup, workshopGroup);
+
+  const result = el('div');
+  const readForm = (): SubmitForm => ({
+    name: name.control.value, id: '', summary: summary.control.value, description: description.control.value, authors: authors.control.value,
+    homepage: homepage.control.value, license: license.control.value, gameChoice: gameSelect.value, newGameName: newGame.control.value,
+    platforms: platformBoxes.filter((p) => p.input.checked).map((p) => p.input.value as Platform),
+    install: (kinds.find((k) => k.input.checked)?.input.value ?? 'zip') as SubmitForm['install'],
+    repo: repo.control.value, tag: tag.control.value, workshopItemId: workshopId.control.value, installerAsset: installerAsset.control.value,
+    hashSource: hashFile.input.checked ? 'file' : 'digest', hashFile: hashFileName.control.value, interactive: interactive.input.checked,
+    selfUpdating: selfUpdating.input.checked, leftoverPath: leftover.control.value, zipAsset: zipAsset.control.value,
+    unpackInto: unpackInto.control.value, createdFolder: createdFolder.control.value,
+  });
+
+  const updateVisibility = (): void => {
+    const kind = kinds.find((k) => k.input.checked)?.input.value;
+    githubGroup.hidden = kind === 'workshop';
+    installerGroup.hidden = kind !== 'installer';
+    zipGroup.hidden = kind !== 'zip';
+    workshopGroup.hidden = kind !== 'workshop';
+    newGameGroup.hidden = gameSelect.value !== '';
+    hashFileGroup.hidden = !hashFile.input.checked;
+  };
+  for (const k of kinds) k.input.addEventListener('change', updateVisibility);
+  hashDigest.input.addEventListener('change', updateVisibility);
+  hashFile.input.addEventListener('change', updateVisibility);
+  gameSelect.addEventListener('change', updateVisibility);
+  updateVisibility();
+
+  // --- The result
+  function renderResult(res: SubmitCheckResult & { json?: string }, focus: 'heading' | string): void {
+    const heading = el('h2', { tabindex: '-1' }, 'Your mod entry');
+    const n = res.problems.length;
+    v.status.textContent = n === 0 ? 'No problems found.' : `${plural(n, 'problem', 'problems')} to fix.`;
+    result.replaceChildren(heading);
+
+    if (n > 0) {
+      const list = el('ul');
+      for (const p of res.problems) list.append(el('li', {}, p));
+      result.append(el('h3', {}, 'Problems to fix'), list);
+    }
+    if (res.notes.length > 0) {
+      const list = el('ul');
+      for (const note of res.notes) list.append(el('li', {}, note));
+      result.append(el('h3', {}, 'What was checked'), list);
+    }
+
+    if (res.json) {
+      const area = el('textarea', { id: 's-json', rows: '20', spellcheck: 'false', class: 'code' });
+      area.value = res.json;
+      result.append(
+        el('h3', {}, 'The mod file'),
+        el('label', { for: 's-json' }, 'This is the file that will be added to the catalog. You can edit it, then check it again.'),
+        area,
+      );
+      const say = (text: string): void => {
+        v.status.textContent = text;
+      };
+      result.append(
+        actionButton('Check again', 'check-again', () => {
+          void window.umm.checkSubmission(area.value).then((r) => renderResult({ ...r, json: area.value }, 'check-again'));
+        }),
+        actionButton('Copy to the clipboard', 'copy', () => {
+          void window.umm.copySubmission(area.value).then((ok) => say(ok ? 'Copied to the clipboard.' : 'There is nothing to copy.'));
+        }),
+        actionButton('Save as a file…', 'save', () => {
+          void window.umm.saveSubmission(area.value).then((r) => {
+            if (r.canceled) return;
+            say(r.ok ? `Saved to ${r.path}.` : (r.error ?? 'Could not save the file.'));
+          });
+        }),
+        actionButton('Open GitHub to submit', 'github', () => {
+          void window.umm.openSubmissionOnGithub(area.value).then((r) => {
+            if (!r.ok) return say(r.error ?? 'Could not open GitHub.');
+            say(
+              r.prefilled
+                ? 'GitHub is opening in your browser with your file filled in.'
+                : 'GitHub is opening in your browser. The file was too long to fill in automatically, so it is on your clipboard. Paste it into the large text box.',
+            );
+          });
+        }),
+      );
+      result.append(
+        el('h3', {}, 'What happens next'),
+        el(
+          'ol',
+          {},
+          el('li', {}, '"Open GitHub to submit" opens a page in your browser with your file ready to add. GitHub asks you to sign in; a free account is enough.'),
+          el('li', {}, 'You cannot change this project directly, so GitHub offers to make your own copy and walks you through opening a pull request. Follow its prompts.'),
+          el('li', {}, 'Automatic checks run on your pull request. If one fails, GitHub shows the problem on your file, and you can fix it there.'),
+          el('li', {}, 'Someone reviews it. Once it is accepted, the mod appears in the app for everyone, with no app update needed.'),
+        ),
+        el('p', {}, 'Prefer to do it by hand? Use "Save as a file" and add the file to the catalog/mods folder in your own copy of the repository.'),
+        actionButton('Read the contributor guide', 'guide', () => void window.umm.openExternal(GUIDE_URL)),
+      );
+    }
+    if (focus === 'heading') heading.focus();
+    else focusKey(focus);
+  }
+
+  v.body.append(
+    actionButton('Create my entry', 'create', () => {
+      v.status.textContent = 'Checking…';
+      void window.umm.buildSubmission(readForm()).then((res) => {
+        if (token === renderToken) renderResult(res, 'heading');
+      });
+    }),
+    result,
+  );
+  focusKey(opts.focusKey);
+}
+
 // ---------- navigation ----------
 
 async function show(view: ViewName, opts: ShowOptions = {}): Promise<void> {
@@ -573,6 +775,7 @@ async function show(view: ViewName, opts: ShowOptions = {}): Promise<void> {
   else if (view === 'library') await showLibrary(token, opts);
   else if (view === 'browse') await showBrowse(token, opts);
   else if (view === 'install') await showInstall(token, opts);
+  else if (view === 'submit') await showSubmit(token, opts);
   else await showDetail(token, opts);
 }
 

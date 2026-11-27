@@ -20,6 +20,8 @@ edges, and please report them.
   Downloads are checked against the hash the author published, files that would be replaced are
   backed up first, and installers that open their own window are supported.
 - **Remove**: files are moved to a backup folder rather than erased.
+- **Submit a mod**: know a mod that is missing? A guided form writes the catalog entry for you and
+  helps you send it, so you do not need to know the file format.
 - **Recognises what you already have**: mods that came from the Steam Workshop or that you copied
   in by hand are listed too, and dependencies you already have are not installed again.
 
@@ -56,7 +58,13 @@ npm run catalog     # check every mod file in the catalog
 
 ## Adding a mod
 
-The list of mods is a folder of small JSON files, one per mod, so adding one means adding one file.
+**The easy way:** open **Submit a mod** in the app. Answer a few questions about the mod, and the app
+writes the catalog entry, checks it with the same rules as the automatic check below (including that
+the files you named really exist in the GitHub release), and helps you send it: copy it, save it as
+a file, or open GitHub with the file already filled in so you can follow its prompts to a pull request.
+
+**By hand:** the list of mods is a folder of small JSON files, one per mod, so adding one means
+adding one file.
 
 1. Fork this repository.
 2. Add `catalog/mods/<your-mod-id>.json`. The file name must match the `id` inside it. Copy an

@@ -237,6 +237,49 @@ interface ChooseFolderResult {
   error?: string;
 }
 
+/** What the "Submit a mod" page collects. Everything is text from form fields. */
+interface SubmitForm {
+  name: string;
+  id: string;
+  summary: string;
+  description: string;
+  authors: string;
+  homepage: string;
+  license: string;
+  /** An existing game's id, or "" for a game that is not in the catalog yet. */
+  gameChoice: string;
+  newGameName: string;
+  platforms: Platform[];
+  install: 'installer' | 'zip' | 'workshop';
+  repo: string;
+  tag: string;
+  workshopItemId: string;
+  installerAsset: string;
+  hashSource: 'digest' | 'file';
+  hashFile: string;
+  interactive: boolean;
+  selfUpdating: boolean;
+  /** A file the installer leaves inside the game folder, such as mods/my-mod-*.jar. */
+  leftoverPath: string;
+  zipAsset: string;
+  /** Folder inside the game folder to unpack into, such as Mods. Empty means the game folder itself. */
+  unpackInto: string;
+  /** Name of the folder the zip creates. */
+  createdFolder: string;
+}
+
+interface SubmitCheckResult {
+  /** Things that must be fixed before this can be submitted. */
+  problems: string[];
+  /** Helpful facts, such as the release files that were found. */
+  notes: string[];
+  id?: string;
+}
+
+interface SubmitBuildResult extends SubmitCheckResult {
+  json: string;
+}
+
 interface UmmApi {
   listMods(): Promise<ModSummary[]>;
   getMod(id: string): Promise<ModDetail | null>;
@@ -249,6 +292,11 @@ interface UmmApi {
   runPlan(planId: string, confirmedIds: string[]): Promise<InstallResult>;
   /** Returns a function that stops listening. */
   onInstallProgress(listener: (p: InstallProgress) => void): () => void;
+  buildSubmission(form: SubmitForm): Promise<SubmitBuildResult>;
+  checkSubmission(json: string): Promise<SubmitCheckResult>;
+  copySubmission(json: string): Promise<boolean>;
+  saveSubmission(json: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>;
+  openSubmissionOnGithub(json: string): Promise<{ ok: boolean; prefilled?: boolean; error?: string }>;
   /** Called when a newer mod list has been downloaded and is now in use. */
   onCatalogChanged(listener: () => void): () => void;
   openExternal(url: string): Promise<boolean>;

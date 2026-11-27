@@ -1,9 +1,9 @@
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { catalogInfo, initCatalog, loadAllManifests, loadGames, loadIndex, loadManifest, refreshCatalog } from './catalog';
+import { catalogInfo, initCatalog, loadAllManifests, loadGames, loadIndex, loadManifest, modSchemaProblems, refreshCatalog, REPO_URL } from './catalog';
 import { currentEnv } from './detect';
 import { getRelease, getReleaseWithAssets } from './github';
 import { applicableMethods, buildInstallPlan, buildRemovePlan, executeInstall, executeRemove, EngineDeps, InstallPlan, RemovePlan } from './install/engine';
@@ -13,6 +13,7 @@ import { isConsoleProgram, runInConsoleWindow } from './install/run-installer';
 import { readInstalled, upsertRecords, writeInstalled } from './installed';
 import { getLibrary, resolveGames } from './library';
 import { readSettings, writeSettings } from './settings';
+import { buildSubmission, checkSubmission, githubNewFileUrl, SubmitDeps } from './submit';
 import { computeStatus } from './updates';
 
 const userData = (...p: string[]): string => path.join(app.getPath('userData'), ...p);
@@ -252,6 +253,43 @@ async function buildDetail(id: string): Promise<ModDetail | null> {
   return { install, manifest, dependencyNames, release: latest?.info ?? null, releaseError };
 }
 
+// ---------- submitting a mod ----------
+
+const MAX_SUBMISSION_CHARS = 200_000;
+const submitDeps = (): SubmitDeps => ({
+  mods: loadAllManifests(),
+  games: loadGames(),
+  schemaProblems: modSchemaProblems,
+  release: getReleaseWithAssets,
+});
+
+/** Reads the form the window sent, keeping only the fields we know and only the right kinds of value. */
+function toSubmitForm(raw: unknown): SubmitForm | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const s = (k: string): string => (typeof r[k] === 'string' ? (r[k] as string).slice(0, 2000) : '');
+  const b = (k: string): boolean => r[k] === true;
+  const platforms = Array.isArray(r.platforms) ? r.platforms.filter((p): p is Platform => p === 'windows' || p === 'macos' || p === 'linux') : [];
+  const install = r.install === 'installer' || r.install === 'zip' || r.install === 'workshop' ? r.install : 'zip';
+  return {
+    name: s('name'), id: s('id'), summary: s('summary'), description: s('description'), authors: s('authors'), homepage: s('homepage'),
+    license: s('license'), gameChoice: s('gameChoice'), newGameName: s('newGameName'), platforms, install, repo: s('repo'), tag: s('tag'),
+    workshopItemId: s('workshopItemId'), installerAsset: s('installerAsset'), hashSource: r.hashSource === 'file' ? 'file' : 'digest',
+    hashFile: s('hashFile'), interactive: b('interactive'), selfUpdating: b('selfUpdating'), leftoverPath: s('leftoverPath'),
+    zipAsset: s('zipAsset'), unpackInto: s('unpackInto'), createdFolder: s('createdFolder'),
+  };
+}
+
+const validSubmissionText = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= MAX_SUBMISSION_CHARS;
+
+/** Saving and sending are only offered for entries that pass every check, so a bad file never leaves the app. */
+async function checkedSubmission(text: unknown): Promise<{ ok: true; text: string; id: string } | { ok: false; error: string }> {
+  if (!validSubmissionText(text)) return { ok: false, error: 'There is no mod file to use.' };
+  const result = await checkSubmission(text, submitDeps());
+  if (result.problems.length > 0 || !result.id) return { ok: false, error: 'Fix the problems listed first, then try again.' };
+  return { ok: true, text, id: result.id };
+}
+
 // ---------- window ----------
 
 function createWindow(): void {
@@ -294,6 +332,41 @@ ipcMain.handle('install:plan', (_e, modId: unknown, methodId: unknown, gameVersi
 );
 ipcMain.handle('install:plan-remove', (_e, modId: unknown) => (typeof modId === 'string' ? planRemove(modId) : { ok: false, error: 'Invalid request.' }));
 ipcMain.handle('install:run', (e, planId: unknown, confirmed: unknown) => runPlan(e.sender, planId, confirmed));
+ipcMain.handle('submit:build', (_e, raw: unknown) => {
+  const form = toSubmitForm(raw);
+  return form ? buildSubmission(form, submitDeps()) : { json: '', problems: ['The form could not be read.'], notes: [] };
+});
+ipcMain.handle('submit:check', (_e, text: unknown) =>
+  validSubmissionText(text) ? checkSubmission(text, submitDeps()) : { problems: ['There is no mod file to check.'], notes: [] },
+);
+ipcMain.handle('submit:copy', (_e, text: unknown): boolean => {
+  if (!validSubmissionText(text)) return false;
+  clipboard.writeText(text);
+  return true;
+});
+ipcMain.handle('submit:save', async (e, text: unknown) => {
+  const checked = await checkedSubmission(text);
+  if (!checked.ok) return { ok: false, error: checked.error };
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const options = { title: 'Save your mod file', defaultPath: `${checked.id}.json`, filters: [{ name: 'JSON file', extensions: ['json'] }] };
+  const chosen = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+  if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(chosen.filePath, checked.text, 'utf8'); // no byte-order mark
+    return { ok: true, path: chosen.filePath };
+  } catch (err) {
+    return { ok: false, error: `Could not save the file: ${errorText(err)}` };
+  }
+});
+ipcMain.handle('submit:open-github', async (_e, text: unknown) => {
+  const checked = await checkedSubmission(text);
+  if (!checked.ok) return { ok: false, error: checked.error };
+  const { url, prefilled } = githubNewFileUrl(REPO_URL, checked.id, checked.text);
+  // Too long to carry in a link: put it on the clipboard so it can be pasted into the page that opens.
+  if (!prefilled) clipboard.writeText(checked.text);
+  await shell.openExternal(url);
+  return { ok: true, prefilled };
+});
 ipcMain.handle('games:choose-folder', async (e, gameId: unknown): Promise<ChooseFolderResult> => {
   const def = loadGames().find((g) => g.id === gameId);
   if (!def) return { ok: false, error: 'Unknown game.' };

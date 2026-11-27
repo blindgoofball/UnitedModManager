@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const Ajv = require('ajv');
 const addFormats = require('ajv-formats');
+const { checkMod, describeAjvError } = require('../catalog/checks.js'); // shared with the app's Submit page
 
 const root = path.join(__dirname, '..');
 const args = process.argv.slice(2);
@@ -43,28 +44,6 @@ function readJsonDir(dir) {
   }
   return items;
 }
-
-function describeAjvError(e) {
-  const p = e.instancePath || '(root)';
-  if (e.keyword === 'additionalProperties') return `${p}: unknown property "${e.params.additionalProperty}"`;
-  if (e.keyword === 'required') return `${p}: missing "${e.params.missingProperty}"`;
-  return `${p}: ${e.message}`;
-}
-
-const EXECUTABLE = /\.(exe|msi|bat|cmd|ps1|sh|jar)$/i;
-
-/** Why a path pattern is too risky to delete or match, or null if it is fine. */
-function unsafePattern(p) {
-  const rest = (p.match(/^\{\w+\}\/?(.*)$/) || [])[1] || '';
-  const segments = rest.split('/').filter(Boolean);
-  if (segments.length === 0) return 'it names a whole folder root, not something inside it';
-  if (segments.some((s) => s === '..')) return 'it contains ".."';
-  if (segments.slice(0, -1).some((s) => /[*?]/.test(s))) return 'wildcards are only allowed in the last part';
-  const last = segments[segments.length - 1];
-  if (/[*?]/.test(last) && last.split(/[*?]/)[0].length < 4) return 'a wildcard needs at least 4 fixed characters before it';
-  return null;
-}
-const allSteps = (m) => [...m.methods.flatMap((x) => x.steps), ...(m.afterInstall || [])];
 
 const mods = [];
 for (const { file, data: m } of readJsonDir(modsDir)) {
@@ -105,84 +84,9 @@ for (const { where, file, m } of mods) {
   }
 }
 
+// Everything about a single mod (hashes, backups, safe delete paths, dependencies, update info).
 for (const { where, m } of mods) {
-  const steps = allSteps(m);
-
-  // Versions used in `when` must be declared, and platforms must be supported.
-  const conds = [...m.methods.map((x) => x.when), ...steps.map((s) => s.when)].filter(Boolean);
-  for (const c of conds) {
-    if (c.version && !(m.gameVersions || []).includes(c.version)) {
-      fail(where, `"when.version" is "${c.version}" but it is not listed in gameVersions`);
-    }
-    if (c.platform && !m.platforms.includes(c.platform)) {
-      fail(where, `"when.platform" is "${c.platform}" but the mod does not list that platform`);
-    }
-  }
-
-  // Anything downloaded and then run must be integrity-checked.
-  for (const method of m.methods) {
-    const downloads = new Map();
-    for (const s of method.steps) {
-      if (s.type === 'download') {
-        if (s.asset && m.source.type !== 'github') fail(where, `method "${method.id}": "asset" downloads need a github source`);
-        downloads.set(s.asset || s.url, s);
-      }
-      if (s.type === 'run') {
-        const d = [...downloads.entries()].find(([name]) => name === s.file || name.endsWith('/' + s.file));
-        if (!d) fail(where, `method "${method.id}": run step "${s.file}" has no matching download step`);
-        else if (!d[1].sha256 && !d[1].sha256Asset && !d[1].githubDigest) {
-          fail(where, `method "${method.id}": "${s.file}" is run after download, so the download needs sha256, sha256Asset or githubDigest`);
-        }
-      }
-    }
-  }
-  for (const s of steps) {
-    if (s.type === 'download' && s.asset && EXECUTABLE.test(s.asset) && !s.sha256 && !s.sha256Asset && !s.githubDigest) {
-      fail(where, `download "${s.asset}" is an executable type and needs sha256, sha256Asset or githubDigest`);
-    }
-    if (s.type === 'copy' && s.to && !s.backup && s.ifExists !== 'skip') {
-      fail(where, `copy to "${s.to}" can overwrite a user file, so it needs "backup": true (or ifExists "skip")`);
-    }
-  }
-
-  // detect / uninstall rules must point at real methods and be safe to act on.
-  const methodIds = new Set(m.methods.map((x) => x.id));
-  for (const rule of m.detect || []) {
-    if (rule.method && !methodIds.has(rule.method)) fail(where, `detect rule names method "${rule.method}", which this mod does not have`);
-    const bad = unsafePattern(rule.path);
-    if (bad) fail(where, `detect path "${rule.path}": ${bad}`);
-  }
-  for (const s of m.uninstall || []) {
-    if (s.when && s.when.method && !methodIds.has(s.when.method)) {
-      fail(where, `uninstall step names method "${s.when.method}", which this mod does not have`);
-    }
-    if (s.type === 'delete') {
-      const bad = unsafePattern(s.path);
-      if (bad) fail(where, `delete path "${s.path}": ${bad}`);
-    }
-  }
-  for (const s of steps) {
-    if (s.when && s.when.method) fail(where, '"when.method" is only allowed in uninstall steps');
-  }
-
-  // Dependencies must exist.
-  for (const d of m.dependencies || []) {
-    const dep = byId.get(d.id);
-    if (!dep) fail(where, `dependency "${d.id}" is not in the catalog`);
-    else if (dep.game.id !== m.game.id) fail(where, `dependency "${d.id}" is for a different game`);
-    if (d.id === m.id) fail(where, 'a mod cannot depend on itself');
-  }
-
-  // Update strategy needs matching information.
-  const u = m.updates;
-  if (u.strategy === 'asset-changed' && !u.asset) fail(where, 'updates.asset is required for asset-changed');
-  if ((u.strategy === 'asset-changed' || u.strategy === 'release-tag') && m.source.type !== 'github') {
-    fail(where, `updates.strategy "${u.strategy}" needs a github source`);
-  }
-  if (u.versionFrom && u.versionFrom.tag) {
-    try { new RegExp(u.versionFrom.tag); } catch (e) { fail(where, `updates.versionFrom.tag is not a valid regex (${e.message})`); }
-  }
-  if (m.kind === 'dependency' && (m.dependencies || []).length) fail(where, 'dependencies of dependencies are not supported yet');
+  for (const msg of checkMod(m, { byId })) fail(where, msg);
 }
 
 if (errors.length) {
@@ -242,8 +146,9 @@ if (!checkOnly) {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'catalog.json'), JSON.stringify(bundle));
-  // The app re-checks what it downloads against the same schemas.
+  // The app re-checks what it downloads against the same schemas, and its Submit page against the same rules.
   for (const f of ['mod.schema.json', 'game.schema.json']) fs.copyFileSync(path.join(root, 'catalog', 'schema', f), path.join(outDir, f));
+  fs.copyFileSync(path.join(root, 'catalog', 'checks.js'), path.join(outDir, 'checks.js'));
 }
 console.log(
   `Catalog OK: ${browsable.length} mod(s) listed, ${mods.length - browsable.length} dependency, ${gameNames.size} game(s)` +

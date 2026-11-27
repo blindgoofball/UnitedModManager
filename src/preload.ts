@@ -15,6 +15,11 @@ const api: UmmApi = {
     ipcRenderer.on('install:progress', handler);
     return () => void ipcRenderer.removeListener('install:progress', handler);
   },
+  buildSubmission: (form) => ipcRenderer.invoke('submit:build', form),
+  checkSubmission: (json) => ipcRenderer.invoke('submit:check', json),
+  copySubmission: (json) => ipcRenderer.invoke('submit:copy', json),
+  saveSubmission: (json) => ipcRenderer.invoke('submit:save', json),
+  openSubmissionOnGithub: (json) => ipcRenderer.invoke('submit:open-github', json),
   onCatalogChanged: (listener) => {
     const handler = (): void => listener();
     ipcRenderer.on('catalog:changed', handler);

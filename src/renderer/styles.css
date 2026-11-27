@@ -59,6 +59,13 @@ dl.facts dd { margin: 0; }
 .badge { display: inline-block; margin-left: .5rem; padding: 0 .5rem; border: 2px solid currentColor; border-radius: 999px; font-size: .85rem; font-weight: 700; }
 
 label { display: block; font-weight: 700; margin: .75rem 0 .25rem; }
+.field { margin: 1rem 0; }
+.field label { margin: 0 0 .15rem; }
+.hint { margin: 0 0 .35rem; color: var(--muted); font-size: .95rem; }
+.field input[type="text"], .field input[type="url"], .field textarea { width: 100%; max-width: 40rem; font: inherit; padding: .5rem .6rem; border: 2px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+textarea.code { width: 100%; max-width: 60rem; font: .95rem/1.4 ui-monospace, Consolas, monospace; padding: .6rem; border: 2px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.group { margin: .5rem 0 1rem; padding-left: 1rem; border-left: 3px solid var(--border); }
+.group[hidden] { display: none; }
 input[type="search"], select { font: inherit; padding: .5rem .6rem; min-width: 16rem; max-width: 100%; border: 2px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 fieldset { margin: 1rem 0; padding: .5rem 1rem 1rem; border: 1px solid var(--border); border-radius: 8px; }
 legend { font-weight: 700; padding: 0 .5rem; }

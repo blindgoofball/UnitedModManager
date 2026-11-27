@@ -19,14 +19,17 @@ export interface CatalogBundle {
   mods: ModManifest[];
 }
 
+export const REPO_URL = 'https://github.com/blindgoofball/UnitedModManager';
 /** Published by the repository's CI whenever the catalog changes on main. */
-export const DEFAULT_CATALOG_URL = 'https://github.com/blindgoofball/UnitedModManager/releases/download/catalog/catalog.json';
+export const DEFAULT_CATALOG_URL = `${REPO_URL}/releases/download/catalog/catalog.json`;
 const MAX_BYTES = 5 * 1024 * 1024;
 const builtInDir = path.join(__dirname, 'catalog');
 
 // ---------- validation ----------
 
-let validators: { mod: (d: unknown) => boolean; game: (d: unknown) => boolean; errors: (which: 'mod' | 'game') => string } | undefined;
+let validators:
+  | { mod: (d: unknown) => boolean; game: (d: unknown) => boolean; errors: (which: 'mod' | 'game') => string; allErrors: (which: 'mod' | 'game') => string[] }
+  | undefined;
 
 function getValidators() {
   if (validators) return validators;
@@ -36,8 +39,23 @@ function getValidators() {
   const mod = ajv.compile(read('mod.schema.json'));
   const game = ajv.compile(read('game.schema.json'));
   const describe = (errs: typeof mod.errors): string => (errs ?? []).slice(0, 3).map((e) => `${e.instancePath || '(root)'} ${e.message}`).join('; ');
-  validators = { mod, game, errors: (which) => describe(which === 'mod' ? mod.errors : game.errors) };
+  // The same sentences CI prints, so a contributor sees what the pull request check would say.
+  const { describeAjvError } = require(path.join(builtInDir, 'checks.js')) as { describeAjvError: (e: unknown) => string };
+  const all = (errs: typeof mod.errors): string[] => (errs ?? []).map((e) => describeAjvError(e));
+  validators = {
+    mod,
+    game,
+    errors: (which) => describe(which === 'mod' ? mod.errors : game.errors),
+    allErrors: (which) => all(which === 'mod' ? mod.errors : game.errors),
+  };
   return validators;
+}
+
+/** Every way a single mod file breaks the schema, as short sentences. Empty means it is valid. */
+export function modSchemaProblems(mod: unknown): string[] {
+  const v = getValidators();
+  if (v.mod(mod)) return [];
+  return v.allErrors('mod');
 }
 
 /** Throws with a plain-words reason if `raw` is not a catalog this version of the app can use. */
