@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft-java",
+  "name": "Minecraft: Java Edition",
+  "detect": {
+    "paths": [
+      { "platform": "windows", "path": "{appdata}/.minecraft", "marker": "versions" },
+      { "platform": "macos", "path": "{home}/Library/Application Support/minecraft", "marker": "versions" },
+      { "platform": "linux", "path": "{home}/.minecraft", "marker": "versions" }
+    ]
+  }
+}

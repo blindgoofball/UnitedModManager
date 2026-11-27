@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "rimworld-access",
+  "name": "RimWorld Access",
+  "summary": "Screen reader accessibility for RimWorld, including the menus and the colony map.",
+  "authors": ["aaronr7734"],
+  "homepage": "https://rimworldaccess.com/",
+  "game": { "id": "rimworld", "name": "RimWorld" },
+  "platforms": ["windows", "macos"],
+  "gameVersions": ["1.6", "1.7"],
+  "source": { "type": "github", "repo": "aaronr7734/rimworld_access", "tag": "dev" },
+  "dependencies": [{ "id": "harmony-rimworld" }],
+  "methods": [
+    {
+      "id": "workshop",
+      "label": "Steam Workshop",
+      "recommended": true,
+      "steps": [
+        { "type": "open", "url": "steam://url/CommunityFilePage/3750094441" },
+        { "type": "note", "text": "Click Subscribe. When Steam asks about Harmony, choose Subscribe to All. Both download the next time RimWorld launches." }
+      ]
+    },
+    {
+      "id": "manual",
+      "label": "Manual install (no Steam, or you manage files yourself)",
+      "steps": [
+        { "type": "download", "asset": "RimWorldAccess-dev.zip", "githubDigest": true },
+        { "type": "extract", "to": "{game}/Mods", "when": { "platform": "windows" } },
+        { "type": "extract", "to": "{game}/Mods", "when": { "platform": "macos", "version": "1.7" } },
+        { "type": "extract", "to": "{game}/RimWorldMac.app/Mods", "when": { "platform": "macos", "version": "1.6" } }
+      ]
+    }
+  ],
+  "afterInstall": [
+    { "type": "note", "text": "The next steps replace your RimWorld mod list file (ModsConfig.xml) with one that has Harmony and RimWorld Access turned on. Your other mods will be turned off. A backup is made first." },
+    {
+      "type": "copy",
+      "when": { "platform": "windows", "version": "1.6" },
+      "from": { "url": "https://rimworldaccess.com/files/ModsConfig.xml" },
+      "to": "{locallow}/Ludeon Studios/RimWorld by Ludeon Studios/Config/ModsConfig.xml",
+      "backup": true,
+      "ifExists": "ask"
+    },
+    {
+      "type": "copy",
+      "when": { "platform": "windows", "version": "1.7" },
+      "from": { "url": "https://rimworldaccess.com/files/ModsConfig-1.7.xml" },
+      "to": "{locallow}/Ludeon Studios/RimWorld by Ludeon Studios/Config/ModsConfig.xml",
+      "backup": true,
+      "ifExists": "ask"
+    },
+    {
+      "type": "copy",
+      "when": { "platform": "macos", "version": "1.6" },
+      "from": { "url": "https://rimworldaccess.com/files/ModsConfig.xml" },
+      "to": "{appsupport}/RimWorld/Config/ModsConfig.xml",
+      "backup": true,
+      "ifExists": "ask"
+    },
+    {
+      "type": "copy",
+      "when": { "platform": "macos", "version": "1.7" },
+      "from": { "url": "https://rimworldaccess.com/files/ModsConfig-1.7.xml" },
+      "to": "{appsupport}/RimWorld/Config/ModsConfig.xml",
+      "backup": true,
+      "ifExists": "ask"
+    }
+  ],
+  "conflicts": [
+    { "note": "If you used the manual install before, delete the old RimWorldAccess folder from Mods before switching to Workshop. A leftover copy loads instead of the Workshop copy and may load twice." }
+  ],
+  "detect": [
+    { "method": "workshop", "path": "{workshop}/3750094441" },
+    { "method": "manual", "path": "{game}/Mods/RimWorldAccess" }
+  ],
+  "uninstall": [
+    { "when": { "method": "manual" }, "type": "delete", "path": "{game}/Mods/RimWorldAccess" },
+    { "when": { "method": "workshop" }, "type": "open", "url": "steam://url/CommunityFilePage/3750094441" },
+    { "when": { "method": "workshop" }, "type": "note", "text": "Steam owns the files of Workshop mods. Unsubscribe on the Steam page that opens, and Steam removes them." },
+    { "type": "note", "text": "Your RimWorld mod list may still mention RimWorld Access. The game will show it as missing, and you can take it out of the list there." }
+  ],
+  "updates": { "strategy": "asset-changed", "asset": "RimWorldAccess-dev.zip" }
+}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "united-minecraft",
+  "name": "United Minecraft",
+  "summary": "Full accessibility for blind players in Minecraft, for Fabric and NeoForge.",
+  "authors": ["Blindgoofball"],
+  "homepage": "https://github.com/Blindgoofball/United-Minecraft",
+  "license": "GPL-3.0",
+  "game": { "id": "minecraft-java", "name": "Minecraft: Java Edition" },
+  "platforms": ["windows"],
+  "source": { "type": "github", "repo": "Blindgoofball/United-Minecraft" },
+  "methods": [
+    {
+      "id": "installer",
+      "label": "Installer that updates the game and the mod itself",
+      "recommended": true,
+      "steps": [
+        { "type": "download", "asset": "united-installer.exe", "sha256Asset": "united-installer.exe.sha256" },
+        { "type": "run", "file": "united-installer.exe", "interactive": true }
+      ]
+    }
+  ],
+  "detect": [
+    { "method": "installer", "path": "{game}/mods/united-minecraft-*.jar" }
+  ],
+  "uninstall": [
+    { "type": "delete", "path": "{game}/mods/united-minecraft-*.jar" },
+    { "type": "note", "text": "This removes only the United Minecraft file. Anything the installer set up for your game, such as a mod loader, stays in place because other mods may use it. Run the installer again to reinstall." }
+  ],
+  "updates": {
+    "strategy": "asset-changed",
+    "asset": "united-installer.exe",
+    "selfUpdating": true,
+    "versionFrom": { "tag": "^v(?<mod>[\\d.]+)\\+mc(?<game>[\\d.]+)$" }
+  }
+}

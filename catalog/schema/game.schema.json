@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "United Mod Manager game definition (schema v1)",
+  "description": "Optional per-game data that lets the app find the game on a user's computer. A game without one can still have mods; the user just picks its folder by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64 },
+    "name": { "type": "string", "minLength": 1 },
+    "detect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "steam": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["appId"],
+          "properties": { "appId": { "type": "string", "pattern": "^[0-9]+$" } }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["platform", "path"],
+            "properties": {
+              "platform": { "enum": ["windows", "macos", "linux"] },
+              "path": {
+                "type": "string",
+                "pattern": "^\\{(home|appdata|localappdata|locallow|documents)\\}(/.*)?$",
+                "description": "A well-known folder, written with a path token and forward slashes."
+              },
+              "marker": {
+                "type": "string",
+                "description": "A file or folder that must exist inside the path for it to count as a real install."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

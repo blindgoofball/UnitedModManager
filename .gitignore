@@ -1,0 +1,13 @@
+﻿# dependencies and build output
+node_modules/
+dist/
+
+# scratch output from the smoke and integration scripts
+smoke-out.json
+*.crash.txt
+
+# editor and OS noise
+.vscode/
+.idea/
+Thumbs.db
+*.log

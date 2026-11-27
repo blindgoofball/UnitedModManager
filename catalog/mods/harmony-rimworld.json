@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "harmony-rimworld",
+  "kind": "dependency",
+  "name": "Harmony (RimWorld)",
+  "summary": "Library that many RimWorld mods, including RimWorld Access, need in order to run.",
+  "authors": ["pardeike"],
+  "homepage": "https://github.com/pardeike/HarmonyRimWorld",
+  "game": { "id": "rimworld", "name": "RimWorld" },
+  "platforms": ["windows", "macos"],
+  "source": { "type": "github", "repo": "pardeike/HarmonyRimWorld" },
+  "gameVersions": ["1.6", "1.7"],
+  "methods": [
+    {
+      "id": "workshop",
+      "label": "Steam Workshop",
+      "recommended": true,
+      "steps": [
+        { "type": "open", "url": "steam://url/CommunityFilePage/2009463077" },
+        { "type": "note", "text": "Click Subscribe on the Harmony page in Steam. It downloads the next time RimWorld launches." }
+      ]
+    },
+    {
+      "id": "manual",
+      "label": "Manual install (no Steam)",
+      "steps": [
+        { "type": "download", "asset": "HarmonyMod.zip", "sha256Asset": "HarmonyMod.zip.sha256" },
+        { "type": "extract", "to": "{game}/Mods", "when": { "platform": "windows" } },
+        { "type": "extract", "to": "{game}/Mods", "when": { "platform": "macos", "version": "1.7" } },
+        { "type": "extract", "to": "{game}/RimWorldMac.app/Mods", "when": { "platform": "macos", "version": "1.6" } }
+      ]
+    }
+  ],
+  "detect": [
+    { "method": "workshop", "path": "{workshop}/2009463077" },
+    { "method": "manual", "path": "{game}/Mods/HarmonyMod" }
+  ],
+  "uninstall": [
+    { "when": { "method": "manual" }, "type": "delete", "path": "{game}/Mods/HarmonyMod" },
+    { "when": { "method": "workshop" }, "type": "open", "url": "steam://url/CommunityFilePage/2009463077" },
+    { "when": { "method": "workshop" }, "type": "note", "text": "Steam owns the files of Workshop mods. Unsubscribe on the Steam page that opens, and Steam removes them." }
+  ],
+  "updates": { "strategy": "release-tag" }
+}

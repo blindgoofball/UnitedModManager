@@ -1,0 +1,274 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "United Mod Manager mod manifest (schema v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "summary", "authors", "game", "platforms", "source", "methods", "updates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/definitions/slug" },
+    "kind": { "enum": ["mod", "dependency"], "default": "mod", "description": "Dependencies are hidden from browsing and only installed when another mod needs them." },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "description": { "type": "string" },
+    "authors": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "homepage": { "type": "string", "format": "uri" },
+    "license": { "type": "string" },
+    "tags": { "type": "array", "items": { "$ref": "#/definitions/slug" } },
+    "game": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/definitions/slug" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gameVersions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Game versions this mod needs to treat differently. When present, the user is asked to pick one, and `when.version` in steps matches against it."
+    },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["windows", "macos", "linux"] }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "repo"],
+          "properties": {
+            "type": { "const": "github" },
+            "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+            "tag": { "type": "string", "minLength": 1, "description": "Pin a specific release tag, such as a rolling `dev` tag. Omit to use the latest release." }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "itemId"],
+          "properties": {
+            "type": { "const": "workshop" },
+            "itemId": { "type": "string", "pattern": "^[0-9]+$" }
+          }
+        }
+      ]
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "$ref": "#/definitions/slug" } }
+      }
+    },
+    "methods": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "steps"],
+        "properties": {
+          "id": { "$ref": "#/definitions/slug" },
+          "label": { "type": "string", "minLength": 1 },
+          "recommended": { "type": "boolean" },
+          "when": { "$ref": "#/definitions/when" },
+          "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/step" } }
+        }
+      }
+    },
+    "afterInstall": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/step" },
+      "description": "Steps that run after any method completes, such as placing a settings file."
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["note"],
+        "properties": {
+          "id": { "$ref": "#/definitions/slug" },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "detect": {
+      "type": "array",
+      "description": "How to tell the mod is already on the computer, however it got there. The first rule whose path exists wins, and its `method` says how it was installed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "method": { "$ref": "#/definitions/slug" },
+          "path": { "$ref": "#/definitions/path", "description": "The last part may use * and ? (for example mods/my-mod-*.jar)." }
+        }
+      }
+    },
+    "uninstall": {
+      "type": "array",
+      "description": "How to remove the mod. Steps with `when.method` apply only when the mod was installed that way.",
+      "items": { "$ref": "#/definitions/uninstallStep" }
+    },
+    "updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy"],
+      "properties": {
+        "strategy": { "enum": ["release-tag", "asset-changed", "external"] },
+        "asset": { "type": "string", "minLength": 1, "description": "Glob of the asset to watch (asset-changed)." },
+        "selfUpdating": { "type": "boolean", "description": "The installer keeps the mod up to date itself." },
+        "versionFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tag": { "type": "string", "description": "Regex with optional named groups `mod` and `game`, applied to the release tag." }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64 },
+    "when": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "platform": { "enum": ["windows", "macos", "linux"] },
+        "method": { "$ref": "#/definitions/slug", "description": "Only meaningful in `uninstall` steps." }
+      }
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^\\{(game|home|appdata|localappdata|locallow|documents|appsupport|workshop)\\}(/.*)?$",
+      "description": "Must start with a path token. Use forward slashes. {workshop} is the game's Steam Workshop download folder."
+    },
+    "uninstallStep": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "path"],
+          "properties": {
+            "type": { "const": "delete" },
+            "when": { "$ref": "#/definitions/when" },
+            "path": { "$ref": "#/definitions/path", "description": "Moved to a backup folder, not erased. The last part may use * and ?, but a wildcard needs at least 4 fixed characters before it." }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "url"],
+          "properties": {
+            "type": { "const": "open" },
+            "when": { "$ref": "#/definitions/when" },
+            "url": { "type": "string", "pattern": "^(https|steam)://" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "note" },
+            "when": { "$ref": "#/definitions/when" },
+            "text": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "anyOf": [{ "required": ["asset"] }, { "required": ["url"] }],
+          "properties": {
+            "type": { "const": "download" },
+            "when": { "$ref": "#/definitions/when" },
+            "asset": { "type": "string", "minLength": 1, "description": "Glob matched against the release's asset names." },
+            "url": { "type": "string", "format": "uri" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "sha256Asset": { "type": "string", "minLength": 1, "description": "Name of a release asset that contains the hash." },
+            "githubDigest": { "type": "boolean", "description": "Verify against the digest GitHub records for the asset." }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "to"],
+          "properties": {
+            "type": { "const": "extract" },
+            "when": { "$ref": "#/definitions/when" },
+            "file": { "type": "string", "description": "Defaults to the most recent download." },
+            "to": { "$ref": "#/definitions/path" },
+            "stripTopLevel": { "type": "boolean", "default": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "file"],
+          "properties": {
+            "type": { "const": "run" },
+            "when": { "$ref": "#/definitions/when" },
+            "file": { "type": "string", "minLength": 1 },
+            "interactive": { "type": "boolean" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "elevate": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "from", "to"],
+          "properties": {
+            "type": { "const": "copy" },
+            "when": { "$ref": "#/definitions/when" },
+            "from": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": { "url": { "type": "string", "format": "uri" } }
+            },
+            "to": { "$ref": "#/definitions/path" },
+            "backup": { "type": "boolean" },
+            "ifExists": { "enum": ["overwrite", "skip", "ask"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "url"],
+          "properties": {
+            "type": { "const": "open" },
+            "when": { "$ref": "#/definitions/when" },
+            "url": { "type": "string", "pattern": "^(https|steam)://" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "note" },
+            "when": { "$ref": "#/definitions/when" },
+            "text": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}
