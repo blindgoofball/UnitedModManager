@@ -20,7 +20,7 @@ const gamesDir = path.join(catalogDir, 'games'); // optional, maintainer-added d
 const outDir = path.join(root, 'dist', 'catalog');
 
 const errors = [];
-const fail = (where, msg) => errors.push(`${where}: ${msg}`);
+const fail = (where, msg) => errors.push({ where, msg });
 
 const schema = JSON.parse(fs.readFileSync(path.join(root, 'catalog', 'schema', 'mod.schema.json'), 'utf8'));
 const ajv = new Ajv({ allErrors: true, discriminator: true });
@@ -37,7 +37,7 @@ function readJsonDir(dir) {
       const text = fs.readFileSync(path.join(dir, file), 'utf8').replace(/^﻿/, '');
       items.push({ file, data: JSON.parse(text) });
     } catch (e) {
-      fail(file, `invalid JSON (${e.message})`);
+      fail(`${path.basename(dir)}/${file}`, `invalid JSON (${e.message})`);
     }
   }
   return items;
@@ -185,7 +185,16 @@ for (const { where, m } of mods) {
 }
 
 if (errors.length) {
-  console.error(`Catalog has ${errors.length} problem(s):\n` + errors.map((e) => '  ' + e).join('\n'));
+  console.error(`Catalog has ${errors.length} problem(s):\n` + errors.map((e) => `  ${e.where}: ${e.msg}`).join('\n'));
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    // GitHub shows these as annotations on the file in the pull request, so a contributor sees the
+    // problem next to their change without opening the log.
+    const escape = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    for (const e of errors) {
+      const file = /^(mods|games)\//.test(e.where) ? `catalog/${e.where}` : 'catalog';
+      console.error(`::error file=${escape(file).replace(/,/g, '%2C')},title=Catalog check::${escape(e.msg)}`);
+    }
+  }
   process.exit(1);
 }
 
